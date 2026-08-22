@@ -34,12 +34,28 @@ logging.basicConfig(
 log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHANNEL_ID = os.getenv("CHANNEL_ID", "")
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@yourbestauto1")
 
-CREDIT_URL = os.getenv("CREDIT_URL", "")
-LOCATION_URL = os.getenv("LOCATION_URL", "")
-VIBER_URL = os.getenv("VIBER_URL", "")
-TIKTOK_URL = os.getenv("TIKTOK_URL", "")
+# Посилання для кнопок
+CREDIT_URL = os.getenv(
+    "CREDIT_URL",
+    "https://ref.best/Your_best_autoLV"
+)
+
+LOCATION_URL = os.getenv(
+    "LOCATION_URL",
+    "https://maps.google.com/?q=49.22654,23.81327"
+)
+
+VIBER_URL = os.getenv(
+    "VIBER_URL",
+    "viber://chat?number=%2B380676755121"
+)
+
+TIKTOK_URL = os.getenv(
+    "TIKTOK_URL",
+    "https://www.tiktok.com/@yourbestauto"
+)
 
 MAX_MEDIA = 80
 
@@ -62,16 +78,20 @@ class HealthHandler(BaseHTTPRequestHandler):
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
+
     log.info("Web server started on port %s", port)
+
     server.serve_forever()
 
 
 # =========================================================
-# КНОПКИ БОТА
+# КНОПКИ
 # =========================================================
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [["🚘 Нове оголошення"]],
+    [
+        ["🚘 Нове оголошення"]
+    ],
     resize_keyboard=True
 )
 
@@ -93,25 +113,31 @@ PUBLISH_KEYBOARD = ReplyKeyboardMarkup(
 
 
 def channel_buttons():
-    rows = []
 
-    row1 = []
-    if CREDIT_URL:
-        row1.append(InlineKeyboardButton("💳 Кредит", url=CREDIT_URL))
-    if LOCATION_URL:
-        row1.append(InlineKeyboardButton("📍 Локація", url=LOCATION_URL))
-    if row1:
-        rows.append(row1)
-
-    row2 = []
-    if VIBER_URL:
-        row2.append(InlineKeyboardButton("📲 Viber", url=VIBER_URL))
-    if TIKTOK_URL:
-        row2.append(InlineKeyboardButton("🎵 TikTok", url=TIKTOK_URL))
-    if row2:
-        rows.append(row2)
-
-    return InlineKeyboardMarkup(rows) if rows else None
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "💳 Кредит",
+                    url=CREDIT_URL
+                ),
+                InlineKeyboardButton(
+                    "📍 Розташування",
+                    url=LOCATION_URL
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📲 Viber",
+                    url=VIBER_URL
+                ),
+                InlineKeyboardButton(
+                    "🎵 TikTok",
+                    url=TIKTOK_URL
+                ),
+            ],
+        ]
+    )
 
 
 # =========================================================
@@ -122,6 +148,7 @@ sessions = {}
 
 
 def new_session(user_id):
+
     sessions[user_id] = {
         "media": [],
         "text": "",
@@ -130,6 +157,7 @@ def new_session(user_id):
 
 
 def cancel_session(user_id):
+
     sessions.pop(user_id, None)
 
 
@@ -137,79 +165,135 @@ def cancel_session(user_id):
 # START
 # =========================================================
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     await update.message.reply_text(
         "🚘 Your Best Auto\n\n"
-        "Натисни кнопку «🚘 Нове оголошення», щоб створити новий пост.",
+        "Натисни кнопку «🚘 Нове оголошення», "
+        "щоб створити новий пост.",
         reply_markup=MAIN_KEYBOARD,
     )
 
 
 # =========================================================
-# ОБРОБКА КНОПОК І ТЕКСТУ
+# ТЕКСТ І КНОПКИ
 # =========================================================
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
+    # -----------------------------------------
     # НОВЕ ОГОЛОШЕННЯ
+    # -----------------------------------------
+
     if text == "🚘 Нове оголошення":
+
         new_session(user_id)
 
         await update.message.reply_text(
             "📸 Надсилай фото та відео автомобіля.\n\n"
             f"Можна додати до {MAX_MEDIA} фото/відео.\n\n"
-            "Коли закінчиш — натисни кнопку "
+            "Коли закінчиш — натисни "
             "«✅ Фото/відео готові».",
             reply_markup=MEDIA_KEYBOARD,
         )
+
         return
 
+    # -----------------------------------------
     # СКАСУВАТИ
+    # -----------------------------------------
+
     if text == "❌ Скасувати":
+
         cancel_session(user_id)
 
         await update.message.reply_text(
             "❌ Створення оголошення скасовано.",
             reply_markup=MAIN_KEYBOARD,
         )
+
         return
 
     session = sessions.get(user_id)
 
     if not session:
+
         await update.message.reply_text(
             "Натисни «🚘 Нове оголошення».",
             reply_markup=MAIN_KEYBOARD,
         )
+
         return
 
-    # МЕДІА ГОТОВІ
+    # -----------------------------------------
+    # ФОТО / ВІДЕО ГОТОВІ
+    # -----------------------------------------
+
     if text == "✅ Фото/відео готові":
+
         if not session["media"]:
+
             await update.message.reply_text(
-                "Спочатку надішли хоча б одне фото або відео."
+                "Спочатку надішли хоча б "
+                "одне фото або відео."
             )
+
             return
 
         session["stage"] = "text"
 
         await update.message.reply_text(
-            "📝 Тепер надішли готовий текст оголошення одним повідомленням.",
+            "📝 Тепер надішли готовий текст "
+            "оголошення одним повідомленням.",
             reply_markup=ReplyKeyboardRemove(),
         )
+
         return
 
-    # ПУБЛІКАЦІЯ
+    # -----------------------------------------
+    # ОПУБЛІКУВАТИ
+    # -----------------------------------------
+
     if text == "🚀 Опублікувати":
+
         if not session.get("text"):
+
             await update.message.reply_text(
-                "Спочатку потрібно надіслати текст оголошення."
+                "Спочатку потрібно надіслати "
+                "текст оголошення."
             )
+
             return
 
-        await publish_post(update, context, session)
+        try:
+
+            await publish_post(
+                update,
+                context,
+                session
+            )
+
+        except Exception as e:
+
+            log.exception(
+                "Publish error: %s",
+                e
+            )
+
+            await update.message.reply_text(
+                f"❌ Помилка публікації:\n{e}"
+            )
+
+            return
 
         cancel_session(user_id)
 
@@ -217,10 +301,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✅ Оголошення опубліковано.",
             reply_markup=MAIN_KEYBOARD,
         )
+
         return
 
+    # -----------------------------------------
     # ТЕКСТ ОГОЛОШЕННЯ
+    # -----------------------------------------
+
     if session["stage"] == "text":
+
         session["text"] = text
         session["stage"] = "ready"
 
@@ -229,6 +318,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Натисни «🚀 Опублікувати».",
             reply_markup=PUBLISH_KEYBOARD,
         )
+
         return
 
 
@@ -236,30 +326,47 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ФОТО / ВІДЕО
 # =========================================================
 
-async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def media_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     user_id = update.effective_user.id
     session = sessions.get(user_id)
 
     if not session or session["stage"] != "media":
+
         await update.message.reply_text(
-            "Спочатку натисни «🚘 Нове оголошення».",
+            "Спочатку натисни "
+            "«🚘 Нове оголошення».",
             reply_markup=MAIN_KEYBOARD,
         )
+
         return
 
     if len(session["media"]) >= MAX_MEDIA:
+
         await update.message.reply_text(
             f"⚠️ Максимум {MAX_MEDIA} фото/відео."
         )
+
         return
 
     if update.message.photo:
+
         file_id = update.message.photo[-1].file_id
-        session["media"].append(("photo", file_id))
+
+        session["media"].append(
+            ("photo", file_id)
+        )
 
     elif update.message.video:
+
         file_id = update.message.video.file_id
-        session["media"].append(("video", file_id))
+
+        session["media"].append(
+            ("video", file_id)
+        )
 
     count = len(session["media"])
 
@@ -278,42 +385,74 @@ async def publish_post(
     context: ContextTypes.DEFAULT_TYPE,
     session
 ):
+
     media = session["media"]
     caption = session["text"]
+
     keyboard = channel_buttons()
 
     first_type, first_file = media[0]
 
-    # Перше фото/відео — головний пост
+    # -----------------------------------------
+    # ГОЛОВНИЙ ПОСТ
+    # -----------------------------------------
+
     if first_type == "photo":
+
         await context.bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=first_file,
             caption=caption,
+            parse_mode="HTML",
             reply_markup=keyboard,
         )
+
     else:
+
         await context.bot.send_video(
             chat_id=CHANNEL_ID,
             video=first_file,
             caption=caption,
+            parse_mode="HTML",
             reply_markup=keyboard,
         )
 
-    # Решта фото/відео — альбомами по 10
+    # -----------------------------------------
+    # РЕШТА ФОТО / ВІДЕО
+    # -----------------------------------------
+
     remaining = media[1:]
 
-    for i in range(0, len(remaining), 10):
+    for i in range(
+        0,
+        len(remaining),
+        10
+    ):
+
         batch = remaining[i:i + 10]
+
         group = []
 
         for kind, file_id in batch:
+
             if kind == "photo":
-                group.append(InputMediaPhoto(media=file_id))
+
+                group.append(
+                    InputMediaPhoto(
+                        media=file_id
+                    )
+                )
+
             else:
-                group.append(InputMediaVideo(media=file_id))
+
+                group.append(
+                    InputMediaVideo(
+                        media=file_id
+                    )
+                )
 
         if group:
+
             await context.bot.send_media_group(
                 chat_id=CHANNEL_ID,
                 media=group,
@@ -327,20 +466,37 @@ async def publish_post(
 # =========================================================
 
 def main():
+
     if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN is empty")
+
+        raise RuntimeError(
+            "BOT_TOKEN is empty"
+        )
 
     if not CHANNEL_ID:
-        raise RuntimeError("CHANNEL_ID is empty")
+
+        raise RuntimeError(
+            "CHANNEL_ID is empty"
+        )
 
     threading.Thread(
         target=run_web_server,
         daemon=True
     ).start()
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = (
+        Application
+        .builder()
+        .token(BOT_TOKEN)
+        .build()
+    )
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(
+        CommandHandler(
+            "start",
+            start
+        )
+    )
 
     app.add_handler(
         MessageHandler(
@@ -356,7 +512,9 @@ def main():
         )
     )
 
-    log.info("Your Best Auto Bot started")
+    log.info(
+        "Your Best Auto Bot started"
+    )
 
     app.run_polling(
         allowed_updates=Update.ALL_TYPES
