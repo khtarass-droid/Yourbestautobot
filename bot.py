@@ -59,6 +59,18 @@ HISTORY_USERNAME = os.getenv(
     "YourBestAuto_history"
 ).lstrip("@")
 
+
+# =========================================================
+# ПОСИЛАННЯ
+# =========================================================
+
+CREDIT_URL = "https://ref.best/Your_best_autoLV"
+
+LOCATION_URL = "https://maps.google.com/?q=49.22654,23.81327"
+
+TIKTOK_URL = "https://www.tiktok.com/@yourbestauto"
+
+
 MAX_MEDIA = 80
 
 sessions = {}
@@ -76,11 +88,14 @@ HISTORY_BUTTON_TEXT = "📸 ФОТО ТА ВІДЕО АВТОМОБІЛЯ"
 class HealthHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
+
         self.send_response(200)
+
         self.send_header(
             "Content-type",
             "text/plain"
         )
+
         self.end_headers()
 
         self.wfile.write(
@@ -158,6 +173,65 @@ def cancel_session(user_id):
 
 
 # =========================================================
+# ФОРМУВАННЯ ОПИСУ
+# =========================================================
+
+def build_caption(original_caption):
+
+    caption = original_caption.strip()
+
+    # -----------------------------------------------------
+    # ПРИБИРАЄМО СТАРІ РЯДКИ КРЕДИТ / РОЗТАШУВАННЯ / TIKTOK
+    # ЯКЩО ВОНИ ВИПАДКОВО ЗАЛИШИЛИСЯ У ШАБЛОНІ
+    # -----------------------------------------------------
+
+    lines = caption.splitlines()
+
+    clean_lines = []
+
+    skip_words = (
+        "КРЕДИТ",
+        "РОЗТАШУВАННЯ",
+        "TIKTOK",
+    )
+
+    for line in lines:
+
+        upper_line = line.upper()
+
+        if any(
+            word in upper_line
+            for word in skip_words
+        ):
+            continue
+
+        clean_lines.append(line)
+
+    caption = "\n".join(clean_lines).strip()
+
+    # -----------------------------------------------------
+    # ДОДАЄМО АКТИВНІ ПОСИЛАННЯ
+    # -----------------------------------------------------
+
+    links = (
+        f'🏦 <a href="{CREDIT_URL}">КРЕДИТ</a>\n'
+        f'📍 <a href="{LOCATION_URL}">РОЗТАШУВАННЯ</a>\n'
+        f'🎵 <a href="{TIKTOK_URL}">TIKTOK</a>'
+    )
+
+    if caption:
+        caption = (
+            caption
+            + "\n\n"
+            + links
+        )
+    else:
+        caption = links
+
+    return caption
+
+
+# =========================================================
 # НАЗВА ГІЛКИ
 # =========================================================
 
@@ -166,7 +240,6 @@ def make_topic_name(caption):
     if not caption:
         return "Автомобіль"
 
-    # Прибираємо HTML-теги
     clean = re.sub(
         r"<[^>]+>",
         "",
@@ -175,7 +248,6 @@ def make_topic_name(caption):
 
     clean = html.unescape(clean)
 
-    # Беремо перший непорожній рядок
     lines = [
         line.strip()
         for line in clean.splitlines()
@@ -187,14 +259,12 @@ def make_topic_name(caption):
     else:
         name = "Автомобіль"
 
-    # Прибираємо зайві пробіли
     name = re.sub(
         r"\s+",
         " ",
         name
     ).strip()
 
-    # Назву гілки робимо не надто довгою
     if len(name) > 120:
         name = name[:120].rstrip()
 
@@ -211,10 +281,6 @@ async def post_init(
 
     global CHANNEL_NUMERIC_ID
     global HISTORY_NUMERIC_ID
-
-    # -----------------------------------------------------
-    # ОСНОВНИЙ КАНАЛ
-    # -----------------------------------------------------
 
     try:
 
@@ -236,10 +302,6 @@ async def post_init(
             "Не вдалося отримати основний канал: %s",
             e
         )
-
-    # -----------------------------------------------------
-    # ГРУПА ІСТОРІЇ
-    # -----------------------------------------------------
 
     try:
 
@@ -264,8 +326,7 @@ async def post_init(
         if not is_forum:
 
             log.warning(
-                "Група історії не має "
-                "увімкнених гілок."
+                "Група історії не має увімкнених гілок."
             )
 
     except Exception as e:
@@ -333,7 +394,6 @@ async def text_handler(
     if not update.effective_chat:
         return
 
-    # Працюємо з користувачем тільки приватно
     if update.effective_chat.type != "private":
         return
 
@@ -361,6 +421,8 @@ async def text_handler(
         await update.message.reply_text(
             "📸 Надішли головне фото або відео "
             "ОДРАЗУ разом з готовим описом.\n\n"
+            "КРЕДИТ, РОЗТАШУВАННЯ та TIKTOK "
+            "бот додасть автоматично.\n\n"
             "Потім надсилай решту фото/відео.\n\n"
             "Коли все готово — натисни "
             "«🚀 Опублікувати».",
@@ -468,10 +530,6 @@ async def text_handler(
 
         return
 
-    # -----------------------------------------------------
-    # ІНШИЙ ТЕКСТ
-    # -----------------------------------------------------
-
     if user_id in sessions:
 
         await update.message.reply_text(
@@ -501,7 +559,6 @@ async def media_handler(
     if not update.effective_chat:
         return
 
-    # Ігноруємо групи та канали
     if update.effective_chat.type != "private":
         return
 
@@ -583,11 +640,8 @@ async def media_handler(
 
     if len(session["media"]) == 0:
 
-        # ВАЖЛИВО:
-        # caption_html зберігає клікабельні посилання,
-        # жирний текст, курсив та інше форматування Telegram.
         caption = (
-            update.message.caption_html
+            update.message.caption
             or ""
         )
 
@@ -615,6 +669,10 @@ async def media_handler(
 
         await update.message.reply_text(
             "✅ Головне фото/відео та опис додані.\n\n"
+            "🏦 КРЕДИТ\n"
+            "📍 РОЗТАШУВАННЯ\n"
+            "🎵 TIKTOK\n"
+            "будуть додані автоматично.\n\n"
             "Тепер надсилай додаткові фото/відео.\n"
             "Коли все готово — натисни "
             "«🚀 Опублікувати».",
@@ -717,20 +775,6 @@ async def upload_media_to_topic(
             index:index + batch_size
         ]
 
-        if len(batch) == 1:
-
-            await send_single_media_to_topic(
-                context,
-                topic_id,
-                batch[0]
-            )
-
-            index += 1
-
-            await asyncio.sleep(0.5)
-
-            continue
-
         group = []
 
         for kind, file_id in batch:
@@ -787,9 +831,7 @@ async def create_history_topic(
         name=topic_name,
     )
 
-    topic_id = (
-        topic.message_thread_id
-    )
+    topic_id = topic.message_thread_id
 
     if not topic_id:
 
@@ -827,7 +869,8 @@ async def publish_post(
 ):
 
     media = session["media"]
-    caption = session["caption"]
+
+    original_caption = session["caption"]
 
     if not media:
 
@@ -835,26 +878,31 @@ async def publish_post(
             "Немає фото або відео."
         )
 
-    if not caption:
+    if not original_caption:
 
         raise RuntimeError(
             "Немає опису оголошення."
         )
 
+    # Формуємо кінцевий опис
+    caption = build_caption(
+        original_caption
+    )
+
     if len(caption) > 1024:
 
         raise RuntimeError(
-            "Опис задовгий. Telegram дозволяє "
-            "до 1024 символів у підписі."
+            "Опис разом із посиланнями задовгий.\n"
+            "Трохи скороти текст оголошення."
         )
 
     # -----------------------------------------------------
-    # 1. СТВОРЮЄМО ОКРЕМУ ГІЛКУ
+    # 1. СТВОРЮЄМО ГІЛКУ
     # -----------------------------------------------------
 
     topic_info = await create_history_topic(
         context,
-        caption
+        original_caption
     )
 
     topic_id = topic_info[
@@ -866,7 +914,7 @@ async def publish_post(
     ]
 
     # -----------------------------------------------------
-    # 2. ЗАВАНТАЖУЄМО ВСІ ФОТО / ВІДЕО В ІСТОРІЮ
+    # 2. ЗАВАНТАЖУЄМО ФОТО / ВІДЕО
     # -----------------------------------------------------
 
     await upload_media_to_topic(
@@ -876,7 +924,7 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 3. СТВОРЮЄМО КНОПКУ
+    # 3. КНОПКА ФОТО / ВІДЕО
     # -----------------------------------------------------
 
     history_keyboard = InlineKeyboardMarkup(
@@ -891,7 +939,7 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 4. ПУБЛІКУЄМО ГОЛОВНЕ ОГОЛОШЕННЯ
+    # 4. ПУБЛІКУЄМО ОГОЛОШЕННЯ
     # -----------------------------------------------------
 
     first_type, first_file = media[0]
