@@ -34,7 +34,7 @@ logging.basicConfig(
 log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
+CHANNEL_ID = os.getenv("CHANNEL_ID", "")
 
 CREDIT_URL = os.getenv("CREDIT_URL", "")
 LOCATION_URL = os.getenv("LOCATION_URL", "")
