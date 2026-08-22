@@ -1,237 +1,366 @@
+import os
 import asyncio
 import logging
-import os
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, Update
-from telegram.constants import ParseMode
-from telegram.error import TelegramError
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    InputMediaPhoto,
+    InputMediaVideo,
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002681585680"))
-DISCUSSION_GROUP_ID = int(os.getenv("DISCUSSION_GROUP_ID", "-1004435080882"))
-CREDIT_URL = os.getenv("CREDIT_URL", "https://ref.best/Your_best_autoLV")
-LOCATION_URL = os.getenv("LOCATION_URL", "https://maps.google.com/?q=49.22654,23.81327")
-VIBER_URL = os.getenv("VIBER_URL", "viber://chat?number=%2B380676755121")
-TIKTOK_URL = os.getenv("TIKTOK_URL", "https://www.tiktok.com/@yourbestauto")
-MAX_MEDIA = int(os.getenv("MAX_MEDIA", "80"))
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 
-ASKS = [
-    ("car", "🚗 Назва авто?\nНаприклад: Ford Escape Titanium"),
-    ("year", "📅 Рік?\nНаприклад: 2019"),
-    ("engine", "⚙️ Двигун?\nНаприклад: 2.0"),
-    ("drive", "🚘 Привід?\nНаприклад: AWD"),
-    ("gearbox", "🔄 Коробка?\nНаприклад: Автомат"),
-    ("mileage", "🛣 Пробіг?\nНаприклад: 100 000"),
-    ("price", "💵 Ціна в доларах?\nНаприклад: 14 700"),
-]
+CREDIT_URL = os.getenv("CREDIT_URL", "")
+LOCATION_URL = os.getenv("LOCATION_URL", "")
+VIBER_URL = os.getenv("VIBER_URL", "")
+TIKTOK_URL = os.getenv("TIKTOK_URL", "")
 
-@dataclass
-class MediaItem:
-    kind: str  # photo/video
-    file_id: str
-
-@dataclass
-class Session:
-    media: List[MediaItem] = field(default_factory=list)
-    data: Dict[str, str] = field(default_factory=dict)
-    step: str = "media"  # media/fields/confirm
-    ask_index: int = 0
-
-sessions: Dict[int, Session] = {}
+MAX_MEDIA = 80
 
 
-def keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Кредит", url=CREDIT_URL), InlineKeyboardButton("📍 Локація", url=LOCATION_URL)],
-        [InlineKeyboardButton("📲 Viber", url=VIBER_URL), InlineKeyboardButton("🎵 TikTok", url=TIKTOK_URL)],
-    ])
+# =========================================================
+# WEB SERVER ДЛЯ БЕЗКОШТОВНОГО RENDER
+# =========================================================
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Your Best Auto Bot is running")
+
+    def log_message(self, format, *args):
+        return
 
 
-def fmt_price(raw: str) -> str:
-    s = raw.replace("$", "").strip()
-    return f"{s} $"
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    log.info("Web server started on port %s", port)
+    server.serve_forever()
 
 
-def make_caption(data: Dict[str, str]) -> str:
-    return (
-        f"🚗 <b>{data.get('car','')}</b>\n\n"
-        f"📅 Рік: <b>{data.get('year','')}</b>\n"
-        f"⚙️ Двигун: <b>{data.get('engine','')}</b>\n"
-        f"🚘 Привід: <b>{data.get('drive','')}</b>\n"
-        f"🔄 Коробка: <b>{data.get('gearbox','')}</b>\n"
-        f"🛣 Пробіг: <b>{data.get('mileage','')}</b>\n"
-        f"💵 Ціна: <b>{fmt_price(data.get('price',''))}</b>\n\n"
-        "━━━━━━━━━━━━━━\n\n"
-        "✅ Можливий кредит / лізинг\n"
-        "📸 Більше фото та відео в коментарях ⬇️"
-    )
+# =========================================================
+# КНОПКИ БОТА
+# =========================================================
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [["🚘 Нове оголошення"]],
+    resize_keyboard=True
+)
+
+MEDIA_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["✅ Фото/відео готові"],
+        ["❌ Скасувати"],
+    ],
+    resize_keyboard=True
+)
+
+PUBLISH_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["🚀 Опублікувати"],
+        ["❌ Скасувати"],
+    ],
+    resize_keyboard=True
+)
 
 
-def chunks(items: List[MediaItem], size: int = 10):
-    for i in range(0, len(items), size):
-        yield items[i:i+size]
+def channel_buttons():
+    rows = []
+
+    row1 = []
+    if CREDIT_URL:
+        row1.append(InlineKeyboardButton("💳 Кредит", url=CREDIT_URL))
+    if LOCATION_URL:
+        row1.append(InlineKeyboardButton("📍 Локація", url=LOCATION_URL))
+    if row1:
+        rows.append(row1)
+
+    row2 = []
+    if VIBER_URL:
+        row2.append(InlineKeyboardButton("📲 Viber", url=VIBER_URL))
+    if TIKTOK_URL:
+        row2.append(InlineKeyboardButton("🎵 TikTok", url=TIKTOK_URL))
+    if row2:
+        rows.append(row2)
+
+    return InlineKeyboardMarkup(rows) if rows else None
 
 
-def to_input_media(batch: List[MediaItem]):
-    media = []
-    for item in batch:
-        if item.kind == "photo":
-            media.append(InputMediaPhoto(media=item.file_id))
-        else:
-            media.append(InputMediaVideo(media=item.file_id))
-    return media
+# =========================================================
+# СЕСІЇ
+# =========================================================
 
+sessions = {}
+
+
+def new_session(user_id):
+    sessions[user_id] = {
+        "media": [],
+        "text": "",
+        "stage": "media",
+    }
+
+
+def cancel_session(user_id):
+    sessions.pop(user_id, None)
+
+
+# =========================================================
+# START
+# =========================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привіт. Я бот Your Best Auto.\n\n"
-        "Натисни /new, щоб створити нове оголошення.\n"
-        "Можна надсилати до 80 фото/відео."
+        "🚘 Your Best Auto\n\n"
+        "Натисни кнопку «🚘 Нове оголошення», щоб створити новий пост.",
+        reply_markup=MAIN_KEYBOARD,
     )
 
 
-async def new_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# ОБРОБКА КНОПОК І ТЕКСТУ
+# =========================================================
+
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    sessions[user_id] = Session()
-    await update.message.reply_text(
-        "📸 Надішли фото/відео автомобіля.\n"
-        "Перше фото буде в основному пості, решта піде в коментарі.\n\n"
-        "Коли завершиш надсилати медіа — напиши /done."
-    )
+    text = update.message.text.strip()
 
+    # НОВЕ ОГОЛОШЕННЯ
+    if text == "🚘 Нове оголошення":
+        new_session(user_id)
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sessions.pop(update.effective_user.id, None)
-    await update.message.reply_text("Скасовано. Щоб почати заново — /new")
-
-
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = sessions.get(user_id)
-    if not s or s.step != "media":
-        await update.message.reply_text("Спочатку натисни /new")
+        await update.message.reply_text(
+            "📸 Надсилай фото та відео автомобіля.\n\n"
+            f"Можна додати до {MAX_MEDIA} фото/відео.\n\n"
+            "Коли закінчиш — натисни кнопку "
+            "«✅ Фото/відео готові».",
+            reply_markup=MEDIA_KEYBOARD,
+        )
         return
-    if len(s.media) >= MAX_MEDIA:
-        await update.message.reply_text(f"Ліміт {MAX_MEDIA} фото/відео. Напиши /done або видали зайві.")
-        return
-    msg = update.message
-    if msg.photo:
-        s.media.append(MediaItem("photo", msg.photo[-1].file_id))
-    elif msg.video:
-        s.media.append(MediaItem("video", msg.video.file_id))
-    await update.message.reply_text(f"✅ Додано: {len(s.media)}/{MAX_MEDIA}. Коли все — /done")
 
+    # СКАСУВАТИ
+    if text == "❌ Скасувати":
+        cancel_session(user_id)
 
-async def done_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = sessions.get(user_id)
-    if not s:
-        await update.message.reply_text("Спочатку натисни /new")
+        await update.message.reply_text(
+            "❌ Створення оголошення скасовано.",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
-    if not s.media:
-        await update.message.reply_text("Спочатку надішли хоча б 1 фото або відео.")
-        return
-    s.step = "fields"
-    s.ask_index = 0
-    await update.message.reply_text(ASKS[0][1])
 
+    session = sessions.get(user_id)
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = sessions.get(user_id)
-    if not s:
-        await update.message.reply_text("Для нового оголошення натисни /new")
+    if not session:
+        await update.message.reply_text(
+            "Натисни «🚘 Нове оголошення».",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
-    if s.step != "fields":
-        return
-    key, _ = ASKS[s.ask_index]
-    s.data[key] = update.message.text.strip()
-    s.ask_index += 1
-    if s.ask_index < len(ASKS):
-        await update.message.reply_text(ASKS[s.ask_index][1])
-        return
-    s.step = "confirm"
-    caption = make_caption(s.data)
-    await update.message.reply_text(
-        "Перевір оголошення:\n\n" + caption + "\n\n"
-        "Якщо все правильно — /publish\n"
-        "Якщо скасувати — /cancel",
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True,
-    )
 
-
-async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = sessions.get(user_id)
-    if not s or s.step != "confirm":
-        await update.message.reply_text("Немає готового оголошення. Натисни /new")
-        return
-    caption = make_caption(s.data)
-    first = s.media[0]
-    try:
-        if first.kind == "photo":
-            posted = await context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=first.file_id,
-                caption=caption,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard(),
+    # МЕДІА ГОТОВІ
+    if text == "✅ Фото/відео готові":
+        if not session["media"]:
+            await update.message.reply_text(
+                "Спочатку надішли хоча б одне фото або відео."
             )
-        else:
-            posted = await context.bot.send_video(
+            return
+
+        session["stage"] = "text"
+
+        await update.message.reply_text(
+            "📝 Тепер надішли готовий текст оголошення одним повідомленням.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    # ПУБЛІКАЦІЯ
+    if text == "🚀 Опублікувати":
+        if not session.get("text"):
+            await update.message.reply_text(
+                "Спочатку потрібно надіслати текст оголошення."
+            )
+            return
+
+        await publish_post(update, context, session)
+
+        cancel_session(user_id)
+
+        await update.message.reply_text(
+            "✅ Оголошення опубліковано.",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    # ТЕКСТ ОГОЛОШЕННЯ
+    if session["stage"] == "text":
+        session["text"] = text
+        session["stage"] = "ready"
+
+        await update.message.reply_text(
+            "✅ Текст збережено.\n\n"
+            "Натисни «🚀 Опублікувати».",
+            reply_markup=PUBLISH_KEYBOARD,
+        )
+        return
+
+
+# =========================================================
+# ФОТО / ВІДЕО
+# =========================================================
+
+async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    session = sessions.get(user_id)
+
+    if not session or session["stage"] != "media":
+        await update.message.reply_text(
+            "Спочатку натисни «🚘 Нове оголошення».",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    if len(session["media"]) >= MAX_MEDIA:
+        await update.message.reply_text(
+            f"⚠️ Максимум {MAX_MEDIA} фото/відео."
+        )
+        return
+
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+        session["media"].append(("photo", file_id))
+
+    elif update.message.video:
+        file_id = update.message.video.file_id
+        session["media"].append(("video", file_id))
+
+    count = len(session["media"])
+
+    await update.message.reply_text(
+        f"✅ Додано: {count}/{MAX_MEDIA}",
+        reply_markup=MEDIA_KEYBOARD,
+    )
+
+
+# =========================================================
+# ПУБЛІКАЦІЯ В КАНАЛ
+# =========================================================
+
+async def publish_post(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session
+):
+    media = session["media"]
+    caption = session["text"]
+    keyboard = channel_buttons()
+
+    first_type, first_file = media[0]
+
+    # Перше фото/відео — головний пост
+    if first_type == "photo":
+        await context.bot.send_photo(
+            chat_id=CHANNEL_ID,
+            photo=first_file,
+            caption=caption,
+            reply_markup=keyboard,
+        )
+    else:
+        await context.bot.send_video(
+            chat_id=CHANNEL_ID,
+            video=first_file,
+            caption=caption,
+            reply_markup=keyboard,
+        )
+
+    # Решта фото/відео — альбомами по 10
+    remaining = media[1:]
+
+    for i in range(0, len(remaining), 10):
+        batch = remaining[i:i + 10]
+        group = []
+
+        for kind, file_id in batch:
+            if kind == "photo":
+                group.append(InputMediaPhoto(media=file_id))
+            else:
+                group.append(InputMediaVideo(media=file_id))
+
+        if group:
+            await context.bot.send_media_group(
                 chat_id=CHANNEL_ID,
-                video=first.file_id,
-                caption=caption,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard(),
+                media=group,
             )
 
-        extra = s.media[1:]
-        for batch in chunks(extra, 10):
-            if not batch:
-                continue
-            try:
-                await context.bot.send_media_group(
-                    chat_id=DISCUSSION_GROUP_ID,
-                    media=to_input_media(batch),
-                    reply_to_message_id=posted.message_id,
-                    allow_sending_without_reply=True,
-                )
-            except TelegramError as e:
-                log.warning("Reply media failed, sending without reply: %s", e)
-                await context.bot.send_media_group(chat_id=DISCUSSION_GROUP_ID, media=to_input_media(batch))
-            await asyncio.sleep(1)
+        await asyncio.sleep(1)
 
-        sessions.pop(user_id, None)
-        await update.message.reply_text("✅ Оголошення опубліковано.")
-    except TelegramError as e:
-        log.exception("Publish error")
-        await update.message.reply_text(f"❌ Помилка публікації: {e}")
 
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is empty")
+
+    if not CHANNEL_ID:
+        raise RuntimeError("CHANNEL_ID is empty")
+
+    threading.Thread(
+        target=run_web_server,
+        daemon=True
+    ).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("new", new_post))
-    app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(CommandHandler("done", done_media))
-    app.add_handler(CommandHandler("publish", publish))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, handle_media))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    log.info("Bot started")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO | filters.VIDEO,
+            media_handler
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            text_handler
+        )
+    )
+
+    log.info("Your Best Auto Bot started")
+
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES
+    )
 
 
 if __name__ == "__main__":
