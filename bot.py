@@ -171,7 +171,7 @@ CREATE_KEYBOARD = ReplyKeyboardMarkup(
 
 
 # =========================================================
-# ФОРМУВАННЯ ВЕРХНЬОГО ТЕКСТУ
+# ФОРМАТУВАННЯ ВЕРХНЬОГО ТЕКСТУ
 # =========================================================
 
 def format_user_caption(user_caption):
@@ -180,6 +180,8 @@ def format_user_caption(user_caption):
         return ""
 
     result_lines = []
+
+    first_text_line = True
 
     for line in user_caption.splitlines():
 
@@ -193,9 +195,12 @@ def format_user_caption(user_caption):
             clean_line
         )
 
-        # Якщо в рядку є долар —
-        # весь рядок робимо жирним
-        if "$" in clean_line:
+        # Перший непорожній рядок:
+        # назва автомобіля = ЖИРНИЙ
+        #
+        # Будь-який рядок з $:
+        # ціна = ЖИРНА
+        if first_text_line or "$" in clean_line:
 
             result_lines.append(
                 f"<b>{escaped_line}</b>"
@@ -206,6 +211,8 @@ def format_user_caption(user_caption):
             result_lines.append(
                 escaped_line
             )
+
+        first_text_line = False
 
     return "\n".join(
         result_lines
@@ -280,11 +287,8 @@ def make_topic_name(caption):
     ]
 
     if lines:
-
         name = lines[0]
-
     else:
-
         name = "Автомобіль"
 
     name = re.sub(
@@ -317,6 +321,7 @@ async def post_init(
     global CHANNEL_NUMERIC_ID
     global HISTORY_NUMERIC_ID
 
+    # Основний канал
     try:
 
         channel = await application.bot.get_chat(
@@ -341,6 +346,7 @@ async def post_init(
             e
         )
 
+    # Група історії
     try:
 
         history_chat = (
@@ -428,7 +434,7 @@ async def chatid(
 
 
 # =========================================================
-# ТЕКСТОВІ КОМАНДИ
+# ТЕКСТ / КНОПКИ
 # =========================================================
 
 async def text_handler(
@@ -471,12 +477,14 @@ async def text_handler(
             "📸 Надішли головне фото або відео "
             "ОДРАЗУ разом із верхньою частиною "
             "оголошення.\n\n"
-            "Текст можеш писати як хочеш.\n"
-            "Рядок, у якому є $, бот зробить жирним.\n\n"
-            "Телефон, Viber, Тарас, "
-            "КРЕДИТ, РОЗТАШУВАННЯ, TIKTOK "
-            "і текст про фото/відео "
-            "бот додасть автоматично.",
+            "Верхній текст пиши як хочеш.\n\n"
+            "✅ Перший рядок бот автоматично "
+            "зробить жирним.\n"
+            "✅ Рядок із ціною, де є $, "
+            "теж буде жирним.\n\n"
+            "Телефон, Viber, КРЕДИТ, "
+            "РОЗТАШУВАННЯ, TIKTOK та текст "
+            "про фото/відео бот додасть сам.",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -590,8 +598,8 @@ async def text_handler(
 
         await update.message.reply_text(
             "Текст оголошення потрібно "
-            "додати саме в підпис "
-            "до головного фото або відео.",
+            "додати в підпис до "
+            "головного фото або відео.",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -695,7 +703,7 @@ async def media_handler(
         return
 
     # -----------------------------------------------------
-    # ГОЛОВНИЙ ФАЙЛ
+    # ГОЛОВНЕ ФОТО / ВІДЕО
     # -----------------------------------------------------
 
     if len(session["media"]) == 0:
@@ -740,7 +748,7 @@ async def media_handler(
         return
 
     # -----------------------------------------------------
-    # ДОДАТКОВІ ФАЙЛИ
+    # ДОДАТКОВІ ФОТО / ВІДЕО
     # -----------------------------------------------------
 
     session["media"].append(
@@ -762,7 +770,7 @@ async def media_handler(
 
 
 # =========================================================
-# НАДСИЛАННЯ ОДНОГО ФАЙЛУ В ГІЛКУ
+# ОДИН ФАЙЛ У ГІЛКУ
 # =========================================================
 
 async def send_single_media_to_topic(
@@ -811,6 +819,7 @@ async def upload_media_to_topic(
             len(media) - index
         )
 
+        # Один файл
         if remaining_count == 1:
 
             await send_single_media_to_topic(
@@ -827,6 +836,7 @@ async def upload_media_to_topic(
 
             continue
 
+        # До 10 файлів в одному альбомі
         batch_size = min(
             10,
             remaining_count
@@ -872,7 +882,7 @@ async def upload_media_to_topic(
 
 
 # =========================================================
-# СТВОРЕННЯ ГІЛКИ
+# СТВОРЕННЯ ГІЛКИ ІСТОРІЇ
 # =========================================================
 
 async def create_history_topic(
@@ -958,8 +968,7 @@ async def publish_post(
     if len(caption) > 1024:
 
         raise RuntimeError(
-            "Опис перевищує "
-            "ліміт Telegram.\n"
+            "Опис перевищує ліміт Telegram. "
             "Трохи скороти верхній текст."
         )
 
@@ -983,7 +992,7 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 2. ЗАВАНТАЖУЄМО ФОТО / ВІДЕО
+    # 2. ЗАВАНТАЖУЄМО ФОТО / ВІДЕО В ІСТОРІЮ
     # -----------------------------------------------------
 
     await upload_media_to_topic(
@@ -1008,7 +1017,7 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 4. ПУБЛІКУЄМО ГОЛОВНИЙ ПОСТ
+    # 4. ПУБЛІКУЄМО ГОЛОВНЕ ОГОЛОШЕННЯ
     # -----------------------------------------------------
 
     first_type, first_file = (
