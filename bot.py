@@ -45,8 +45,12 @@ sessions = {}
 CHANNEL_NUMERIC_ID = None
 DISCUSSION_CHAT_ID = None
 
-# Тут бот чекатиме автоматичний пост у групі обговорення
+# Чекаємо появу автоматичного поста
 pending_discussion_posts = {}
+
+# Якщо автоматичний пост у коментарях прилетів
+# раніше, ніж publish_post почав його чекати
+discussion_post_cache = {}
 
 
 # =========================================================
@@ -66,6 +70,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def run_web_server():
+
     port = int(os.environ.get("PORT", 10000))
 
     server = HTTPServer(
@@ -73,13 +78,16 @@ def run_web_server():
         HealthHandler
     )
 
-    log.info("Web server started on port %s", port)
+    log.info(
+        "Web server started on port %s",
+        port
+    )
 
     server.serve_forever()
 
 
 # =========================================================
-# КНОПКИ В САМОМУ БОТІ
+# КНОПКИ БОТА
 # =========================================================
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -103,6 +111,7 @@ CREATE_KEYBOARD = ReplyKeyboardMarkup(
 # =========================================================
 
 def new_session(user_id):
+
     sessions[user_id] = {
         "media": [],
         "caption": "",
@@ -110,20 +119,29 @@ def new_session(user_id):
 
 
 def cancel_session(user_id):
-    sessions.pop(user_id, None)
+
+    sessions.pop(
+        user_id,
+        None
+    )
 
 
 # =========================================================
-# ПЕРЕВІРКА КАНАЛУ ТА ГРУПИ КОМЕНТАРІВ
+# ПЕРЕВІРКА КАНАЛУ І ГРУПИ КОМЕНТАРІВ
 # =========================================================
 
-async def post_init(application: Application):
+async def post_init(
+    application: Application
+):
 
     global CHANNEL_NUMERIC_ID
     global DISCUSSION_CHAT_ID
 
     try:
-        channel = await application.bot.get_chat(CHANNEL_ID)
+
+        channel = await application.bot.get_chat(
+            CHANNEL_ID
+        )
 
         CHANNEL_NUMERIC_ID = channel.id
 
@@ -144,11 +162,14 @@ async def post_init(application: Application):
         )
 
         if not DISCUSSION_CHAT_ID:
+
             log.warning(
-                "У каналу не знайдено прив'язану групу коментарів."
+                "У каналу немає прив'язаної "
+                "групи обговорення."
             )
 
     except Exception as e:
+
         log.exception(
             "Помилка визначення каналу: %s",
             e
@@ -156,13 +177,20 @@ async def post_init(application: Application):
 
 
 # =========================================================
-# START
+# /START
 # =========================================================
 
 async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
+    # Працюємо з користувачем тільки в приватному чаті
+    if not update.effective_chat:
+        return
+
+    if update.effective_chat.type != "private":
+        return
 
     await update.message.reply_text(
         "🚘 Your Best Auto\n\n"
@@ -172,13 +200,24 @@ async def start(
 
 
 # =========================================================
-# ТЕКСТОВІ КНОПКИ
+# ТЕКСТ / КНОПКИ
 # =========================================================
 
 async def text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
+    # ВАЖЛИВО:
+    # у групі коментарів бот нічого не відповідає
+    if not update.effective_chat:
+        return
+
+    if update.effective_chat.type != "private":
+        return
+
+    if not update.message:
+        return
 
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -192,10 +231,11 @@ async def text_handler(
         new_session(user_id)
 
         await update.message.reply_text(
-            "📸 Надішли перше фото або відео автомобіля "
-            "ОДРАЗУ разом з описом оголошення.\n\n"
-            "Після цього можеш додати решту фото/відео.\n"
-            "Коли все готово — натисни «🚀 Опублікувати».",
+            "📸 Надішли головне фото або відео "
+            "ОДРАЗУ разом з готовим описом.\n\n"
+            "Потім можеш додати решту фото/відео.\n\n"
+            "Коли все готово — натисни "
+            "«🚀 Опублікувати».",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -225,24 +265,31 @@ async def text_handler(
         session = sessions.get(user_id)
 
         if not session:
+
             await update.message.reply_text(
-                "Спочатку натисни «🚘 Нове оголошення».",
+                "Спочатку натисни "
+                "«🚘 Нове оголошення».",
                 reply_markup=MAIN_KEYBOARD,
             )
+
             return
 
         if not session["media"]:
+
             await update.message.reply_text(
-                "Спочатку надішли фото або відео з описом."
+                "Спочатку надішли "
+                "головне фото або відео."
             )
+
             return
 
         if not session["caption"]:
+
             await update.message.reply_text(
-                "На першому фото або відео немає опису.\n\n"
-                "Скасуй це оголошення та надішли перше "
-                "фото/відео одразу з текстом."
+                "На головному фото або відео "
+                "немає опису оголошення."
             )
+
             return
 
         await update.message.reply_text(
@@ -250,6 +297,7 @@ async def text_handler(
         )
 
         try:
+
             comments_ok = await publish_post(
                 context,
                 session
@@ -258,16 +306,20 @@ async def text_handler(
             cancel_session(user_id)
 
             if comments_ok:
+
                 await update.message.reply_text(
                     "✅ Оголошення опубліковано.\n"
-                    "📸 Додаткові фото/відео додані в коментарі.",
+                    "📸 Додаткові фото та відео "
+                    "додані в коментарі.",
                     reply_markup=MAIN_KEYBOARD,
                 )
+
             else:
+
                 await update.message.reply_text(
                     "✅ Основне оголошення опубліковано.\n\n"
-                    "⚠️ Додаткові фото не вдалося додати "
-                    "в коментарі.",
+                    "⚠️ Але додаткові фото/відео "
+                    "не вдалося додати в коментарі.",
                     reply_markup=MAIN_KEYBOARD,
                 )
 
@@ -292,9 +344,9 @@ async def text_handler(
     if user_id in sessions:
 
         await update.message.reply_text(
-            "Опис не потрібно надсилати окремо.\n\n"
-            "Він має бути підписом саме до першого "
-            "фото або відео.",
+            "Опис окремо надсилати не потрібно.\n\n"
+            "Встав його прямо в підпис "
+            "до головного фото або відео.",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -307,13 +359,34 @@ async def text_handler(
 
 
 # =========================================================
-# ПРИЙОМ ФОТО / ВІДЕО
+# ПРИЙОМ ФОТО / ВІДЕО В ПРИВАТНОМУ ЧАТІ
 # =========================================================
 
 async def media_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
+    # =====================================================
+    # КЛЮЧОВЕ ВИПРАВЛЕННЯ:
+    # НЕ ЧІПАЄМО ФОТО/ВІДЕО З ГРУПИ КОМЕНТАРІВ
+    # =====================================================
+
+    if not update.effective_chat:
+        return
+
+    if update.effective_chat.type != "private":
+        return
+
+    if not update.message:
+        return
+
+    if getattr(
+        update.message,
+        "is_automatic_forward",
+        False
+    ):
+        return
 
     user_id = update.effective_user.id
 
@@ -322,7 +395,8 @@ async def media_handler(
     if not session:
 
         await update.message.reply_text(
-            "Спочатку натисни «🚘 Нове оголошення».",
+            "Спочатку натисни "
+            "«🚘 Нове оголошення».",
             reply_markup=MAIN_KEYBOARD,
         )
 
@@ -336,17 +410,17 @@ async def media_handler(
 
         return
 
+    media_type = None
+    file_id = None
+
     # -----------------------------------------------------
     # ФОТО
     # -----------------------------------------------------
 
     if update.message.photo:
 
+        media_type = "photo"
         file_id = update.message.photo[-1].file_id
-
-        session["media"].append(
-            ("photo", file_id)
-        )
 
     # -----------------------------------------------------
     # ВІДЕО
@@ -354,41 +428,47 @@ async def media_handler(
 
     elif update.message.video:
 
+        media_type = "video"
         file_id = update.message.video.file_id
 
-        session["media"].append(
-            ("video", file_id)
-        )
+    else:
+        return
 
     # -----------------------------------------------------
-    # ПЕРШЕ МЕДІА = БЕРЕМО ОПИС
+    # ГОЛОВНЕ ФОТО / ВІДЕО
     # -----------------------------------------------------
 
-    if len(session["media"]) == 1:
+    if len(session["media"]) == 0:
 
         caption = update.message.caption or ""
 
         if not caption.strip():
 
-            # Перше фото без опису не зберігаємо
-            session["media"].clear()
-
             await update.message.reply_text(
-                "⚠️ Перше фото або відео потрібно "
-                "надіслати РАЗОМ з описом оголошення.\n\n"
-                "Надішли його ще раз і встав опис "
-                "у поле підпису.",
+                "⚠️ Головне фото або відео "
+                "потрібно надіслати РАЗОМ "
+                "з описом оголошення.\n\n"
+                "Надішли його ще раз і встав "
+                "опис у поле підпису.",
                 reply_markup=CREATE_KEYBOARD,
             )
 
             return
 
+        session["media"].append(
+            (
+                media_type,
+                file_id
+            )
+        )
+
         session["caption"] = caption
 
         await update.message.reply_text(
             "✅ Головне фото/відео та опис додані.\n\n"
-            "Тепер можеш надсилати додаткові фото/відео.\n"
-            "Коли все готово — натисни «🚀 Опублікувати».",
+            "Тепер надсилай додаткові фото/відео.\n"
+            "Коли все готово — натисни "
+            "«🚀 Опублікувати».",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -398,7 +478,16 @@ async def media_handler(
     # ДОДАТКОВІ ФОТО / ВІДЕО
     # -----------------------------------------------------
 
-    count = len(session["media"])
+    session["media"].append(
+        (
+            media_type,
+            file_id
+        )
+    )
+
+    count = len(
+        session["media"]
+    )
 
     await update.message.reply_text(
         f"✅ Додано: {count}/{MAX_MEDIA}",
@@ -407,7 +496,7 @@ async def media_handler(
 
 
 # =========================================================
-# ЛОВИМО АВТОМАТИЧНИЙ ПОСТ У ГРУПІ КОМЕНТАРІВ
+# ЛОВИМО АВТОМАТИЧНИЙ ПОСТ У ГРУПІ ОБГОВОРЕННЯ
 # =========================================================
 
 async def discussion_handler(
@@ -420,6 +509,8 @@ async def discussion_handler(
     if not message:
         return
 
+    # Нас цікавлять ТІЛЬКИ автоматичні
+    # пересилання постів із каналу
     if not getattr(
         message,
         "is_automatic_forward",
@@ -427,7 +518,9 @@ async def discussion_handler(
     ):
         return
 
+    # Перевіряємо, що це саме наша група
     if DISCUSSION_CHAT_ID:
+
         if message.chat_id != DISCUSSION_CHAT_ID:
             return
 
@@ -435,7 +528,7 @@ async def discussion_handler(
     original_chat_id = None
 
     # -----------------------------------------------------
-    # НОВІ ВЕРСІЇ TELEGRAM API
+    # НОВИЙ TELEGRAM API
     # -----------------------------------------------------
 
     origin = getattr(
@@ -459,10 +552,11 @@ async def discussion_handler(
         )
 
         if origin_chat:
+
             original_chat_id = origin_chat.id
 
     # -----------------------------------------------------
-    # СТАРІША СУМІСНІСТЬ
+    # СУМІСНІСТЬ ЗІ СТАРІШИМИ ВЕРСІЯМИ
     # -----------------------------------------------------
 
     if original_message_id is None:
@@ -480,6 +574,7 @@ async def discussion_handler(
         )
 
         if forward_chat:
+
             original_chat_id = forward_chat.id
 
     if not original_message_id:
@@ -492,27 +587,48 @@ async def discussion_handler(
     ):
         return
 
+    # -----------------------------------------------------
+    # ЗБЕРІГАЄМО ПОСТ У КЕШ
+    # -----------------------------------------------------
+
+    discussion_post_cache[
+        original_message_id
+    ] = {
+        "discussion_chat_id": message.chat_id,
+        "discussion_message_id": message.message_id,
+    }
+
+    # -----------------------------------------------------
+    # ЯКЩО publish_post УЖЕ ЧЕКАЄ —
+    # БУДИМО ЙОГО
+    # -----------------------------------------------------
+
     pending = pending_discussion_posts.get(
         original_message_id
     )
 
-    if not pending:
-        return
+    if pending:
 
-    pending["discussion_chat_id"] = message.chat_id
-    pending["discussion_message_id"] = message.message_id
+        pending["discussion_chat_id"] = (
+            message.chat_id
+        )
 
-    pending["event"].set()
+        pending["discussion_message_id"] = (
+            message.message_id
+        )
+
+        pending["event"].set()
 
     log.info(
-        "Found discussion post: channel=%s discussion=%s",
+        "Discussion post found: "
+        "channel=%s discussion=%s",
         original_message_id,
         message.message_id
     )
 
 
 # =========================================================
-# ПУБЛІКАЦІЯ ОСНОВНОГО ПОСТА
+# ПУБЛІКАЦІЯ
 # =========================================================
 
 async def publish_post(
@@ -524,25 +640,28 @@ async def publish_post(
     caption = session["caption"]
 
     if not media:
+
         raise RuntimeError(
             "Немає фото або відео."
         )
 
     if not caption:
+
         raise RuntimeError(
             "Немає опису оголошення."
         )
 
     if len(caption) > 1024:
+
         raise RuntimeError(
             "Опис задовгий. Telegram дозволяє "
-            "до 1024 символів у підписі до фото/відео."
+            "до 1024 символів у підписі."
         )
 
     first_type, first_file = media[0]
 
     # -----------------------------------------------------
-    # ОСНОВНЕ ФОТО + ОПИС
+    # ГОЛОВНИЙ ПОСТ
     # -----------------------------------------------------
 
     if first_type == "photo":
@@ -554,10 +673,6 @@ async def publish_post(
             parse_mode="HTML",
         )
 
-    # -----------------------------------------------------
-    # ОСНОВНЕ ВІДЕО + ОПИС
-    # -----------------------------------------------------
-
     else:
 
         posted = await context.bot.send_video(
@@ -567,69 +682,117 @@ async def publish_post(
             parse_mode="HTML",
         )
 
+    channel_message_id = posted.message_id
+
     log.info(
         "Main post published: %s",
-        posted.message_id
+        channel_message_id
     )
 
     remaining = media[1:]
 
-    # Якщо додаткових фото немає —
-    # основний пост уже готовий.
+    # Немає додаткових фото
     if not remaining:
+
         return True
 
     # -----------------------------------------------------
-    # ЧЕКАЄМО АВТОМАТИЧНИЙ ПОСТ У ГРУПІ ОБГОВОРЕННЯ
+    # СПОЧАТКУ ДИВИМОСЬ, ЧИ TELEGRAM
+    # ВЖЕ ВСТИГ СТВОРИТИ ПОСТ У КОМЕНТАРЯХ
     # -----------------------------------------------------
 
-    event = asyncio.Event()
+    cached = discussion_post_cache.pop(
+        channel_message_id,
+        None
+    )
 
-    pending_discussion_posts[
-        posted.message_id
-    ] = {
-        "event": event,
-        "discussion_chat_id": None,
-        "discussion_message_id": None,
-    }
+    if cached:
 
-    try:
+        discussion_chat_id = cached[
+            "discussion_chat_id"
+        ]
 
-        await asyncio.wait_for(
-            event.wait(),
-            timeout=15
-        )
+        discussion_message_id = cached[
+            "discussion_message_id"
+        ]
 
-    except asyncio.TimeoutError:
+    else:
 
-        pending_discussion_posts.pop(
-            posted.message_id,
+        # -------------------------------------------------
+        # ЯКЩО ЩЕ НЕ СТВОРИВ — ЧЕКАЄМО
+        # -------------------------------------------------
+
+        event = asyncio.Event()
+
+        pending_discussion_posts[
+            channel_message_id
+        ] = {
+            "event": event,
+            "discussion_chat_id": None,
+            "discussion_message_id": None,
+        }
+
+        # Перевіряємо кеш ще раз після
+        # створення pending, щоб закрити race condition
+        cached = discussion_post_cache.pop(
+            channel_message_id,
             None
         )
 
-        log.warning(
-            "Discussion post was not detected."
+        if cached:
+
+            pending_discussion_posts[
+                channel_message_id
+            ]["discussion_chat_id"] = cached[
+                "discussion_chat_id"
+            ]
+
+            pending_discussion_posts[
+                channel_message_id
+            ]["discussion_message_id"] = cached[
+                "discussion_message_id"
+            ]
+
+            event.set()
+
+        try:
+
+            await asyncio.wait_for(
+                event.wait(),
+                timeout=20
+            )
+
+        except asyncio.TimeoutError:
+
+            pending_discussion_posts.pop(
+                channel_message_id,
+                None
+            )
+
+            log.warning(
+                "Не знайдено автоматичний пост "
+                "у групі коментарів."
+            )
+
+            return False
+
+        pending = pending_discussion_posts.pop(
+            channel_message_id
         )
 
-        return False
+        discussion_chat_id = pending[
+            "discussion_chat_id"
+        ]
 
-    pending = pending_discussion_posts.pop(
-        posted.message_id
-    )
-
-    discussion_chat_id = pending[
-        "discussion_chat_id"
-    ]
-
-    discussion_message_id = pending[
-        "discussion_message_id"
-    ]
+        discussion_message_id = pending[
+            "discussion_message_id"
+        ]
 
     if not discussion_chat_id:
         return False
 
     # -----------------------------------------------------
-    # ДОДАТКОВІ ФОТО / ВІДЕО ЙДУТЬ В КОМЕНТАРІ
+    # ДОДАТКОВІ ФОТО / ВІДЕО В КОМЕНТАРІ
     # -----------------------------------------------------
 
     for i in range(
@@ -713,8 +876,9 @@ def main():
         )
     )
 
-    # Ловимо автоматичні пости з каналу
-    # у прив'язаній групі обговорення
+    # ГРУПА -1:
+    # тільки відстежуємо автоматичний
+    # пост у коментарях
     app.add_handler(
         MessageHandler(
             filters.ALL,
@@ -723,7 +887,8 @@ def main():
         group=-1
     )
 
-    # Фото / відео від тебе
+    # ГРУПА 0:
+    # фото/відео користувача
     app.add_handler(
         MessageHandler(
             filters.PHOTO | filters.VIDEO,
@@ -732,7 +897,7 @@ def main():
         group=0
     )
 
-    # Кнопки / текст
+    # Кнопки та текст
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
