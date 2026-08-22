@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     InputMediaPhoto,
     InputMediaVideo,
 )
@@ -39,7 +41,7 @@ log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# Основний канал з автомобілями
+# Основний канал продажу автомобілів
 CHANNEL_ID = os.getenv(
     "CHANNEL_ID",
     "@yourbestauto1"
@@ -51,7 +53,7 @@ HISTORY_CHAT_ID = os.getenv(
     "@YourBestAuto_history"
 )
 
-# Username без @ — потрібен для створення посилання
+# Username форуму без @
 HISTORY_USERNAME = os.getenv(
     "HISTORY_USERNAME",
     "YourBestAuto_history"
@@ -64,7 +66,7 @@ sessions = {}
 CHANNEL_NUMERIC_ID = None
 HISTORY_NUMERIC_ID = None
 
-HISTORY_LINK_TEXT = "📸 Фото та відео автомобіля"
+HISTORY_BUTTON_TEXT = "📸 ФОТО ТА ВІДЕО АВТОМОБІЛЯ"
 
 
 # =========================================================
@@ -173,7 +175,7 @@ def make_topic_name(caption):
 
     clean = html.unescape(clean)
 
-    # Беремо перший нормальний рядок
+    # Беремо перший непорожній рядок
     lines = [
         line.strip()
         for line in clean.splitlines()
@@ -192,7 +194,7 @@ def make_topic_name(caption):
         name
     ).strip()
 
-    # Telegram: назва гілки максимум 128 символів
+    # Назву гілки робимо не надто довгою
     if len(name) > 120:
         name = name[:120].rstrip()
 
@@ -262,7 +264,8 @@ async def post_init(
         if not is_forum:
 
             log.warning(
-                "Група історії не має увімкнених гілок/форуму."
+                "Група історії не має "
+                "увімкнених гілок."
             )
 
     except Exception as e:
@@ -300,7 +303,6 @@ async def start(
 
 # =========================================================
 # /CHATID
-# ЗАЛИШАЄМО ДЛЯ ДІАГНОСТИКИ
 # =========================================================
 
 async def chatid(
@@ -328,10 +330,10 @@ async def text_handler(
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    # Бот спілкується з нами тільки приватно
     if not update.effective_chat:
         return
 
+    # Працюємо з користувачем тільки приватно
     if update.effective_chat.type != "private":
         return
 
@@ -344,7 +346,8 @@ async def text_handler(
     user_id = update.effective_user.id
 
     text = (
-        update.message.text or ""
+        update.message.text
+        or ""
     ).strip()
 
     # -----------------------------------------------------
@@ -440,9 +443,14 @@ async def text_handler(
                 "📂 Створено окрему гілку "
                 "для автомобіля.\n"
                 "📸 Фото та відео додані "
-                "в історію авто.\n\n"
-                f"🔗 {result['history_url']}",
+                "в історію автомобіля.\n"
+                "🔘 Під оголошенням додана кнопка.",
                 reply_markup=MAIN_KEYBOARD,
+            )
+
+            log.info(
+                "Published. History URL: %s",
+                result["history_url"]
             )
 
         except Exception as e:
@@ -482,7 +490,7 @@ async def text_handler(
 
 
 # =========================================================
-# ПРИЙОМ ФОТО / ВІДЕО В ПРИВАТНОМУ ЧАТІ
+# ПРИЙОМ ФОТО / ВІДЕО
 # =========================================================
 
 async def media_handler(
@@ -493,7 +501,7 @@ async def media_handler(
     if not update.effective_chat:
         return
 
-    # Нічого не ловимо з форуму або інших груп
+    # Ігноруємо групи та канали
     if update.effective_chat.type != "private":
         return
 
@@ -570,7 +578,7 @@ async def media_handler(
         return
 
     # -----------------------------------------------------
-    # ГОЛОВНЕ ФОТО / ВІДЕО
+    # ГОЛОВНИЙ ФАЙЛ
     # -----------------------------------------------------
 
     if len(session["media"]) == 0:
@@ -613,7 +621,7 @@ async def media_handler(
         return
 
     # -----------------------------------------------------
-    # ДОДАТКОВІ ФОТО / ВІДЕО
+    # ДОДАТКОВІ ФАЙЛИ
     # -----------------------------------------------------
 
     session["media"].append(
@@ -663,7 +671,7 @@ async def send_single_media_to_topic(
 
 
 # =========================================================
-# НАДСИЛАННЯ ФОТО / ВІДЕО В ГІЛКУ
+# ЗАВАНТАЖЕННЯ ФОТО / ВІДЕО В ГІЛКУ
 # =========================================================
 
 async def upload_media_to_topic(
@@ -683,8 +691,7 @@ async def upload_media_to_topic(
             len(media) - index
         )
 
-        # Якщо залишився один файл —
-        # media_group використовувати не можна
+        # Один файл
         if remaining_count == 1:
 
             await send_single_media_to_topic(
@@ -699,7 +706,7 @@ async def upload_media_to_topic(
 
             continue
 
-        # Група Telegram: максимум 10
+        # Telegram дозволяє до 10 файлів в альбомі
         batch_size = min(
             10,
             remaining_count
@@ -709,7 +716,6 @@ async def upload_media_to_topic(
             index:index + batch_size
         ]
 
-        # Якщо з якоїсь причини batch = 1
         if len(batch) == 1:
 
             await send_single_media_to_topic(
@@ -754,8 +760,6 @@ async def upload_media_to_topic(
 
         index += len(batch)
 
-        # Невелика пауза, щоб не впиратися
-        # в Telegram rate limits
         await asyncio.sleep(1)
 
 
@@ -793,6 +797,7 @@ async def create_history_topic(
             "але не повернув її ID."
         )
 
+    # Пряме посилання на гілку
     history_url = (
         f"https://t.me/"
         f"{HISTORY_USERNAME}/"
@@ -813,7 +818,7 @@ async def create_history_topic(
 
 
 # =========================================================
-# ПУБЛІКАЦІЯ
+# ПУБЛІКАЦІЯ ОГОЛОШЕННЯ
 # =========================================================
 
 async def publish_post(
@@ -836,8 +841,15 @@ async def publish_post(
             "Немає опису оголошення."
         )
 
+    if len(caption) > 1024:
+
+        raise RuntimeError(
+            "Опис задовгий. Telegram дозволяє "
+            "до 1024 символів у підписі."
+        )
+
     # -----------------------------------------------------
-    # 1. СТВОРЮЄМО ГІЛКУ
+    # 1. СТВОРЮЄМО ОКРЕМУ ГІЛКУ
     # -----------------------------------------------------
 
     topic_info = await create_history_topic(
@@ -854,8 +866,7 @@ async def publish_post(
     ]
 
     # -----------------------------------------------------
-    # 2. ЗАВАНТАЖУЄМО ВСІ ФОТО / ВІДЕО
-    #    В ІСТОРІЮ АВТО
+    # 2. ЗАВАНТАЖУЄМО ВСІ ФОТО / ВІДЕО В ІСТОРІЮ
     # -----------------------------------------------------
 
     await upload_media_to_topic(
@@ -865,47 +876,34 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 3. ДОДАЄМО ПОСИЛАННЯ ДО ОПИСУ
+    # 3. СТВОРЮЄМО КНОПКУ
     # -----------------------------------------------------
 
-    caption_with_history = (
-        caption.rstrip()
-        + "\n\n"
-        + f'<a href="{history_url}">'
-        + HISTORY_LINK_TEXT
-        + "</a>"
+    history_keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    HISTORY_BUTTON_TEXT,
+                    url=history_url,
+                )
+            ]
+        ]
     )
 
-    # Telegram обмежує видимий текст caption
-    visible_length = (
-        len(caption.rstrip())
-        + 2
-        + len(HISTORY_LINK_TEXT)
-    )
-
-    if visible_length > 1024:
-
-        raise RuntimeError(
-            "Опис оголошення задовгий. "
-            "Після додавання посилання "
-            "«Фото та відео автомобіля» "
-            "підпис перевищує ліміт Telegram "
-            "1024 символи."
-        )
+    # -----------------------------------------------------
+    # 4. ПУБЛІКУЄМО ГОЛОВНЕ ОГОЛОШЕННЯ
+    # -----------------------------------------------------
 
     first_type, first_file = media[0]
-
-    # -----------------------------------------------------
-    # 4. ПУБЛІКУЄМО ГОЛОВНИЙ ПОСТ
-    # -----------------------------------------------------
 
     if first_type == "photo":
 
         posted = await context.bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=first_file,
-            caption=caption_with_history,
+            caption=caption,
             parse_mode="HTML",
+            reply_markup=history_keyboard,
         )
 
     elif first_type == "video":
@@ -913,8 +911,9 @@ async def publish_post(
         posted = await context.bot.send_video(
             chat_id=CHANNEL_ID,
             video=first_file,
-            caption=caption_with_history,
+            caption=caption,
             parse_mode="HTML",
+            reply_markup=history_keyboard,
         )
 
     else:
@@ -927,10 +926,6 @@ async def publish_post(
         "Main post published: %s",
         posted.message_id
     )
-
-    # -----------------------------------------------------
-    # ГОТОВО
-    # -----------------------------------------------------
 
     return {
         "channel_message_id": posted.message_id,
@@ -982,7 +977,6 @@ def main():
         .build()
     )
 
-    # /start
     app.add_handler(
         CommandHandler(
             "start",
@@ -990,7 +984,6 @@ def main():
         )
     )
 
-    # /chatid
     app.add_handler(
         CommandHandler(
             "chatid",
@@ -998,7 +991,6 @@ def main():
         )
     )
 
-    # Фото / відео
     app.add_handler(
         MessageHandler(
             filters.PHOTO
@@ -1008,7 +1000,6 @@ def main():
         group=0
     )
 
-    # Кнопки та текст
     app.add_handler(
         MessageHandler(
             filters.TEXT
