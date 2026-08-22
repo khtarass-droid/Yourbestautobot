@@ -41,19 +41,16 @@ log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# Основний канал продажу автомобілів
 CHANNEL_ID = os.getenv(
     "CHANNEL_ID",
     "@yourbestauto1"
 )
 
-# Публічна форум-група з історією автомобілів
 HISTORY_CHAT_ID = os.getenv(
     "HISTORY_CHAT_ID",
     "@YourBestAuto_history"
 )
 
-# Username форуму без @
 HISTORY_USERNAME = os.getenv(
     "HISTORY_USERNAME",
     "YourBestAuto_history"
@@ -61,8 +58,11 @@ HISTORY_USERNAME = os.getenv(
 
 
 # =========================================================
-# ПОСИЛАННЯ
+# ПОСТІЙНІ ДАНІ
 # =========================================================
+
+PHONE = "0676755121"
+SELLER_NAME = "Тарас"
 
 CREDIT_URL = "https://ref.best/Your_best_autoLV"
 
@@ -70,15 +70,33 @@ LOCATION_URL = "https://maps.google.com/?q=49.22654,23.81327"
 
 TIKTOK_URL = "https://www.tiktok.com/@yourbestauto"
 
+HISTORY_BUTTON_TEXT = "📸 ФОТО ТА ВІДЕО АВТОМОБІЛЯ"
 
 MAX_MEDIA = 80
+
+
+# =========================================================
+# СЕСІЇ
+# =========================================================
 
 sessions = {}
 
 CHANNEL_NUMERIC_ID = None
 HISTORY_NUMERIC_ID = None
 
-HISTORY_BUTTON_TEXT = "📸 ФОТО ТА ВІДЕО АВТОМОБІЛЯ"
+
+def new_session(user_id):
+    sessions[user_id] = {
+        "media": [],
+        "caption": "",
+    }
+
+
+def cancel_session(user_id):
+    sessions.pop(
+        user_id,
+        None
+    )
 
 
 # =========================================================
@@ -153,82 +171,87 @@ CREATE_KEYBOARD = ReplyKeyboardMarkup(
 
 
 # =========================================================
-# СЕСІЇ
+# ФОРМУВАННЯ ВЕРХНЬОГО ТЕКСТУ
 # =========================================================
 
-def new_session(user_id):
+def format_user_caption(user_caption):
 
-    sessions[user_id] = {
-        "media": [],
-        "caption": "",
-    }
+    if not user_caption:
+        return ""
 
+    result_lines = []
 
-def cancel_session(user_id):
+    for line in user_caption.splitlines():
 
-    sessions.pop(
-        user_id,
-        None
-    )
+        clean_line = line.strip()
 
-
-# =========================================================
-# ФОРМУВАННЯ ОПИСУ
-# =========================================================
-
-def build_caption(original_caption):
-
-    caption = original_caption.strip()
-
-    # -----------------------------------------------------
-    # ПРИБИРАЄМО СТАРІ РЯДКИ КРЕДИТ / РОЗТАШУВАННЯ / TIKTOK
-    # ЯКЩО ВОНИ ВИПАДКОВО ЗАЛИШИЛИСЯ У ШАБЛОНІ
-    # -----------------------------------------------------
-
-    lines = caption.splitlines()
-
-    clean_lines = []
-
-    skip_words = (
-        "КРЕДИТ",
-        "РОЗТАШУВАННЯ",
-        "TIKTOK",
-    )
-
-    for line in lines:
-
-        upper_line = line.upper()
-
-        if any(
-            word in upper_line
-            for word in skip_words
-        ):
+        if not clean_line:
+            result_lines.append("")
             continue
 
-        clean_lines.append(line)
+        escaped_line = html.escape(
+            clean_line
+        )
 
-    caption = "\n".join(clean_lines).strip()
+        # Якщо в рядку є долар —
+        # весь рядок робимо жирним
+        if "$" in clean_line:
 
-    # -----------------------------------------------------
-    # ДОДАЄМО АКТИВНІ ПОСИЛАННЯ
-    # -----------------------------------------------------
+            result_lines.append(
+                f"<b>{escaped_line}</b>"
+            )
 
-    links = (
-        f'🏦 <a href="{CREDIT_URL}">КРЕДИТ</a>\n'
-        f'📍 <a href="{LOCATION_URL}">РОЗТАШУВАННЯ</a>\n'
-        f'🎵 <a href="{TIKTOK_URL}">TIKTOK</a>'
+        else:
+
+            result_lines.append(
+                escaped_line
+            )
+
+    return "\n".join(
+        result_lines
+    ).strip()
+
+
+# =========================================================
+# ФОРМУВАННЯ ГОТОВОГО ОГОЛОШЕННЯ
+# =========================================================
+
+def build_caption(user_caption):
+
+    top_text = format_user_caption(
+        user_caption
     )
 
-    if caption:
-        caption = (
-            caption
-            + "\n\n"
-            + links
-        )
-    else:
-        caption = links
+    phone = html.escape(
+        PHONE
+    )
 
-    return caption
+    seller = html.escape(
+        SELLER_NAME
+    )
+
+    fixed_bottom = (
+        f'📞 Тел. (Viber): '
+        f'<b>{phone} - {seller}</b>\n'
+        f'\n'
+        f'🏦 <a href="{CREDIT_URL}">КРЕДИТ</a>\n'
+        f'📍 <a href="{LOCATION_URL}">РОЗТАШУВАННЯ</a>\n'
+        f'🎵 <a href="{TIKTOK_URL}">TIKTOK</a>\n'
+        f'\n'
+        f'📸 Фото авто, відео, яким воно приїхало, '
+        f'а також відео виявлення та усунення '
+        f'несправностей — <b>кнопка нижче 👇</b>'
+    )
+
+    if top_text:
+
+        return (
+            top_text
+            + "\n\n"
+            + fixed_bottom
+        )
+
+    return fixed_bottom
 
 
 # =========================================================
@@ -246,7 +269,9 @@ def make_topic_name(caption):
         caption
     )
 
-    clean = html.unescape(clean)
+    clean = html.unescape(
+        clean
+    )
 
     lines = [
         line.strip()
@@ -255,8 +280,11 @@ def make_topic_name(caption):
     ]
 
     if lines:
+
         name = lines[0]
+
     else:
+
         name = "Автомобіль"
 
     name = re.sub(
@@ -266,13 +294,20 @@ def make_topic_name(caption):
     ).strip()
 
     if len(name) > 120:
-        name = name[:120].rstrip()
 
-    return name or "Автомобіль"
+        name = (
+            name[:120]
+            .rstrip()
+        )
+
+    return (
+        name
+        or "Автомобіль"
+    )
 
 
 # =========================================================
-# ПЕРЕВІРКА КАНАЛУ ТА ФОРУМУ
+# ПЕРЕВІРКА КАНАЛУ ТА ГРУПИ
 # =========================================================
 
 async def post_init(
@@ -288,7 +323,9 @@ async def post_init(
             CHANNEL_ID
         )
 
-        CHANNEL_NUMERIC_ID = channel.id
+        CHANNEL_NUMERIC_ID = (
+            channel.id
+        )
 
         log.info(
             "Main channel: %s (%s)",
@@ -299,17 +336,22 @@ async def post_init(
     except Exception as e:
 
         log.exception(
-            "Не вдалося отримати основний канал: %s",
+            "Не вдалося отримати "
+            "основний канал: %s",
             e
         )
 
     try:
 
-        history_chat = await application.bot.get_chat(
-            HISTORY_CHAT_ID
+        history_chat = (
+            await application.bot.get_chat(
+                HISTORY_CHAT_ID
+            )
         )
 
-        HISTORY_NUMERIC_ID = history_chat.id
+        HISTORY_NUMERIC_ID = (
+            history_chat.id
+        )
 
         log.info(
             "History chat: %s (%s)",
@@ -326,13 +368,15 @@ async def post_init(
         if not is_forum:
 
             log.warning(
-                "Група історії не має увімкнених гілок."
+                "Група історії не має "
+                "увімкнених гілок."
             )
 
     except Exception as e:
 
         log.exception(
-            "Не вдалося отримати групу історії: %s",
+            "Не вдалося отримати "
+            "групу історії: %s",
             e
         )
 
@@ -378,12 +422,13 @@ async def chatid(
         return
 
     await update.message.reply_text(
-        f"Chat ID: {update.effective_chat.id}"
+        f"Chat ID: "
+        f"{update.effective_chat.id}"
     )
 
 
 # =========================================================
-# ТЕКСТ / КНОПКИ
+# ТЕКСТОВІ КОМАНДИ
 # =========================================================
 
 async def text_handler(
@@ -403,7 +448,9 @@ async def text_handler(
     if not update.effective_user:
         return
 
-    user_id = update.effective_user.id
+    user_id = (
+        update.effective_user.id
+    )
 
     text = (
         update.message.text
@@ -416,16 +463,20 @@ async def text_handler(
 
     if text == "🚘 Нове оголошення":
 
-        new_session(user_id)
+        new_session(
+            user_id
+        )
 
         await update.message.reply_text(
             "📸 Надішли головне фото або відео "
-            "ОДРАЗУ разом з готовим описом.\n\n"
-            "КРЕДИТ, РОЗТАШУВАННЯ та TIKTOK "
-            "бот додасть автоматично.\n\n"
-            "Потім надсилай решту фото/відео.\n\n"
-            "Коли все готово — натисни "
-            "«🚀 Опублікувати».",
+            "ОДРАЗУ разом із верхньою частиною "
+            "оголошення.\n\n"
+            "Текст можеш писати як хочеш.\n"
+            "Рядок, у якому є $, бот зробить жирним.\n\n"
+            "Телефон, Viber, Тарас, "
+            "КРЕДИТ, РОЗТАШУВАННЯ, TIKTOK "
+            "і текст про фото/відео "
+            "бот додасть автоматично.",
             reply_markup=CREATE_KEYBOARD,
         )
 
@@ -437,7 +488,9 @@ async def text_handler(
 
     if text == "❌ Скасувати":
 
-        cancel_session(user_id)
+        cancel_session(
+            user_id
+        )
 
         await update.message.reply_text(
             "❌ Оголошення скасовано.",
@@ -478,8 +531,8 @@ async def text_handler(
         if not session["caption"]:
 
             await update.message.reply_text(
-                "На головному фото або відео "
-                "немає опису оголошення."
+                "До головного фото або відео "
+                "потрібно додати текст оголошення."
             )
 
             return
@@ -505,8 +558,7 @@ async def text_handler(
                 "📂 Створено окрему гілку "
                 "для автомобіля.\n"
                 "📸 Фото та відео додані "
-                "в історію автомобіля.\n"
-                "🔘 Під оголошенням додана кнопка.",
+                "в історію автомобіля.",
                 reply_markup=MAIN_KEYBOARD,
             )
 
@@ -530,11 +582,15 @@ async def text_handler(
 
         return
 
+    # -----------------------------------------------------
+    # ІНШИЙ ТЕКСТ
+    # -----------------------------------------------------
+
     if user_id in sessions:
 
         await update.message.reply_text(
-            "Опис окремо надсилати не потрібно.\n\n"
-            "Встав його прямо в підпис "
+            "Текст оголошення потрібно "
+            "додати саме в підпис "
             "до головного фото або відео.",
             reply_markup=CREATE_KEYBOARD,
         )
@@ -542,7 +598,8 @@ async def text_handler(
     else:
 
         await update.message.reply_text(
-            "Натисни «🚘 Нове оголошення».",
+            "Натисни "
+            "«🚘 Нове оголошення».",
             reply_markup=MAIN_KEYBOARD,
         )
 
@@ -575,7 +632,9 @@ async def media_handler(
     ):
         return
 
-    user_id = update.effective_user.id
+    user_id = (
+        update.effective_user.id
+    )
 
     session = sessions.get(
         user_id
@@ -594,7 +653,8 @@ async def media_handler(
     if len(session["media"]) >= MAX_MEDIA:
 
         await update.message.reply_text(
-            f"⚠️ Максимум {MAX_MEDIA} фото/відео."
+            f"⚠️ Максимум "
+            f"{MAX_MEDIA} фото/відео."
         )
 
         return
@@ -648,11 +708,9 @@ async def media_handler(
         if not caption.strip():
 
             await update.message.reply_text(
-                "⚠️ Головне фото або відео "
-                "потрібно надіслати РАЗОМ "
-                "з описом оголошення.\n\n"
-                "Надішли його ще раз і встав "
-                "опис у поле підпису.",
+                "⚠️ До головного фото "
+                "або відео потрібно додати "
+                "верхню частину оголошення.",
                 reply_markup=CREATE_KEYBOARD,
             )
 
@@ -665,15 +723,15 @@ async def media_handler(
             )
         )
 
-        session["caption"] = caption
+        session["caption"] = (
+            caption
+        )
 
         await update.message.reply_text(
-            "✅ Головне фото/відео та опис додані.\n\n"
-            "🏦 КРЕДИТ\n"
-            "📍 РОЗТАШУВАННЯ\n"
-            "🎵 TIKTOK\n"
-            "будуть додані автоматично.\n\n"
-            "Тепер надсилай додаткові фото/відео.\n"
+            "✅ Головне фото/відео "
+            "та текст оголошення додані.\n\n"
+            "Тепер надсилай додаткові "
+            "фото та відео.\n\n"
             "Коли все готово — натисни "
             "«🚀 Опублікувати».",
             reply_markup=CREATE_KEYBOARD,
@@ -697,7 +755,8 @@ async def media_handler(
     )
 
     await update.message.reply_text(
-        f"✅ Додано: {count}/{MAX_MEDIA}",
+        f"✅ Додано: "
+        f"{count}/{MAX_MEDIA}",
         reply_markup=CREATE_KEYBOARD,
     )
 
@@ -762,7 +821,9 @@ async def upload_media_to_topic(
 
             index += 1
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(
+                0.5
+            )
 
             continue
 
@@ -805,7 +866,9 @@ async def upload_media_to_topic(
 
         index += len(batch)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(
+            1
+        )
 
 
 # =========================================================
@@ -826,12 +889,16 @@ async def create_history_topic(
         topic_name
     )
 
-    topic = await context.bot.create_forum_topic(
-        chat_id=HISTORY_CHAT_ID,
-        name=topic_name,
+    topic = (
+        await context.bot.create_forum_topic(
+            chat_id=HISTORY_CHAT_ID,
+            name=topic_name,
+        )
     )
 
-    topic_id = topic.message_thread_id
+    topic_id = (
+        topic.message_thread_id
+    )
 
     if not topic_id:
 
@@ -870,7 +937,7 @@ async def publish_post(
 
     media = session["media"]
 
-    original_caption = session["caption"]
+    user_caption = session["caption"]
 
     if not media:
 
@@ -878,40 +945,42 @@ async def publish_post(
             "Немає фото або відео."
         )
 
-    if not original_caption:
+    if not user_caption:
 
         raise RuntimeError(
-            "Немає опису оголошення."
+            "Немає тексту оголошення."
         )
 
-    # Формуємо кінцевий опис
     caption = build_caption(
-        original_caption
+        user_caption
     )
 
     if len(caption) > 1024:
 
         raise RuntimeError(
-            "Опис разом із посиланнями задовгий.\n"
-            "Трохи скороти текст оголошення."
+            "Опис перевищує "
+            "ліміт Telegram.\n"
+            "Трохи скороти верхній текст."
         )
 
     # -----------------------------------------------------
     # 1. СТВОРЮЄМО ГІЛКУ
     # -----------------------------------------------------
 
-    topic_info = await create_history_topic(
-        context,
-        original_caption
+    topic_info = (
+        await create_history_topic(
+            context,
+            user_caption
+        )
     )
 
-    topic_id = topic_info[
-        "topic_id"
-    ]
+    topic_id = (
+        topic_info["topic_id"]
+    )
 
-    history_url = topic_info[
-        "history_url"
-    ]
+    history_url = (
+        topic_info["history_url"]
+    )
 
     # -----------------------------------------------------
     # 2. ЗАВАНТАЖУЄМО ФОТО / ВІДЕО
@@ -924,7 +993,7 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 3. КНОПКА ФОТО / ВІДЕО
+    # 3. КНОПКА ФОТО ТА ВІДЕО
     # -----------------------------------------------------
 
     history_keyboard = InlineKeyboardMarkup(
@@ -939,10 +1008,12 @@ async def publish_post(
     )
 
     # -----------------------------------------------------
-    # 4. ПУБЛІКУЄМО ОГОЛОШЕННЯ
+    # 4. ПУБЛІКУЄМО ГОЛОВНИЙ ПОСТ
     # -----------------------------------------------------
 
-    first_type, first_file = media[0]
+    first_type, first_file = (
+        media[0]
+    )
 
     if first_type == "photo":
 
@@ -967,7 +1038,8 @@ async def publish_post(
     else:
 
         raise RuntimeError(
-            "Невідомий тип головного медіафайлу."
+            "Невідомий тип "
+            "головного медіафайлу."
         )
 
     log.info(
@@ -976,7 +1048,9 @@ async def publish_post(
     )
 
     return {
-        "channel_message_id": posted.message_id,
+        "channel_message_id": (
+            posted.message_id
+        ),
         "topic_id": topic_id,
         "history_url": history_url,
     }
