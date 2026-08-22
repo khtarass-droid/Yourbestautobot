@@ -583,8 +583,11 @@ async def media_handler(
 
     if len(session["media"]) == 0:
 
+        # ВАЖЛИВО:
+        # caption_html зберігає клікабельні посилання,
+        # жирний текст, курсив та інше форматування Telegram.
         caption = (
-            update.message.caption
+            update.message.caption_html
             or ""
         )
 
@@ -691,7 +694,6 @@ async def upload_media_to_topic(
             len(media) - index
         )
 
-        # Один файл
         if remaining_count == 1:
 
             await send_single_media_to_topic(
@@ -706,7 +708,6 @@ async def upload_media_to_topic(
 
             continue
 
-        # Telegram дозволяє до 10 файлів в альбомі
         batch_size = min(
             10,
             remaining_count
@@ -797,7 +798,6 @@ async def create_history_topic(
             "але не повернув її ID."
         )
 
-    # Пряме посилання на гілку
     history_url = (
         f"https://t.me/"
         f"{HISTORY_USERNAME}/"
