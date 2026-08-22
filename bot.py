@@ -34,9 +34,11 @@ logging.basicConfig(
 log = logging.getLogger("yourbestautobot")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+
+# Можна залишити CHANNEL_ID у Render.
+# Якщо його немає — бот використовує @yourbestauto1
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@yourbestauto1")
 
-# Посилання для кнопок
 CREDIT_URL = os.getenv(
     "CREDIT_URL",
     "https://ref.best/Your_best_autoLV"
@@ -45,11 +47,6 @@ CREDIT_URL = os.getenv(
 LOCATION_URL = os.getenv(
     "LOCATION_URL",
     "https://maps.google.com/?q=49.22654,23.81327"
-)
-
-VIBER_URL = os.getenv(
-    "VIBER_URL",
-    "viber://chat?number=%2B380676755121"
 )
 
 TIKTOK_URL = os.getenv(
@@ -61,10 +58,11 @@ MAX_MEDIA = 80
 
 
 # =========================================================
-# WEB SERVER ДЛЯ БЕЗКОШТОВНОГО RENDER
+# WEB SERVER ДЛЯ RENDER
 # =========================================================
 
 class HealthHandler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
@@ -77,15 +75,22 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
 
-    log.info("Web server started on port %s", port)
+    server = HTTPServer(
+        ("0.0.0.0", port),
+        HealthHandler
+    )
+
+    log.info(
+        "Web server started on port %s",
+        port
+    )
 
     server.serve_forever()
 
 
 # =========================================================
-# КНОПКИ
+# КНОПКИ БОТА
 # =========================================================
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -112,32 +117,32 @@ PUBLISH_KEYBOARD = ReplyKeyboardMarkup(
 )
 
 
+# =========================================================
+# КНОПКИ ПІД ОГОЛОШЕННЯМ
+# =========================================================
+
 def channel_buttons():
 
-    return InlineKeyboardMarkup(
+    keyboard = [
         [
-            [
-                InlineKeyboardButton(
-                    "💳 Кредит",
-                    url=CREDIT_URL
-                ),
-                InlineKeyboardButton(
-                    "📍 Розташування",
-                    url=LOCATION_URL
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "📲 Viber",
-                    url=VIBER_URL
-                ),
-                InlineKeyboardButton(
-                    "🎵 TikTok",
-                    url=TIKTOK_URL
-                ),
-            ],
-        ]
-    )
+            InlineKeyboardButton(
+                "💳 Кредит",
+                url=CREDIT_URL
+            ),
+            InlineKeyboardButton(
+                "📍 Розташування",
+                url=LOCATION_URL
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "🎵 TikTok",
+                url=TIKTOK_URL
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 # =========================================================
@@ -158,7 +163,10 @@ def new_session(user_id):
 
 def cancel_session(user_id):
 
-    sessions.pop(user_id, None)
+    sessions.pop(
+        user_id,
+        None
+    )
 
 
 # =========================================================
@@ -179,7 +187,7 @@ async def start(
 
 
 # =========================================================
-# ТЕКСТ І КНОПКИ
+# ОБРОБКА ТЕКСТУ ТА КНОПОК
 # =========================================================
 
 async def text_handler(
@@ -190,9 +198,9 @@ async def text_handler(
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    # -----------------------------------------
+    # =====================================================
     # НОВЕ ОГОЛОШЕННЯ
-    # -----------------------------------------
+    # =====================================================
 
     if text == "🚘 Нове оголошення":
 
@@ -201,16 +209,16 @@ async def text_handler(
         await update.message.reply_text(
             "📸 Надсилай фото та відео автомобіля.\n\n"
             f"Можна додати до {MAX_MEDIA} фото/відео.\n\n"
-            "Коли закінчиш — натисни "
+            "Коли закінчиш — натисни кнопку "
             "«✅ Фото/відео готові».",
             reply_markup=MEDIA_KEYBOARD,
         )
 
         return
 
-    # -----------------------------------------
+    # =====================================================
     # СКАСУВАТИ
-    # -----------------------------------------
+    # =====================================================
 
     if text == "❌ Скасувати":
 
@@ -234,9 +242,9 @@ async def text_handler(
 
         return
 
-    # -----------------------------------------
+    # =====================================================
     # ФОТО / ВІДЕО ГОТОВІ
-    # -----------------------------------------
+    # =====================================================
 
     if text == "✅ Фото/відео готові":
 
@@ -259,9 +267,9 @@ async def text_handler(
 
         return
 
-    # -----------------------------------------
+    # =====================================================
     # ОПУБЛІКУВАТИ
-    # -----------------------------------------
+    # =====================================================
 
     if text == "🚀 Опублікувати":
 
@@ -304,9 +312,9 @@ async def text_handler(
 
         return
 
-    # -----------------------------------------
+    # =====================================================
     # ТЕКСТ ОГОЛОШЕННЯ
-    # -----------------------------------------
+    # =====================================================
 
     if session["stage"] == "text":
 
@@ -352,23 +360,33 @@ async def media_handler(
 
         return
 
+    # ФОТО
     if update.message.photo:
 
         file_id = update.message.photo[-1].file_id
 
         session["media"].append(
-            ("photo", file_id)
+            (
+                "photo",
+                file_id
+            )
         )
 
+    # ВІДЕО
     elif update.message.video:
 
         file_id = update.message.video.file_id
 
         session["media"].append(
-            ("video", file_id)
+            (
+                "video",
+                file_id
+            )
         )
 
-    count = len(session["media"])
+    count = len(
+        session["media"]
+    )
 
     await update.message.reply_text(
         f"✅ Додано: {count}/{MAX_MEDIA}",
@@ -393,9 +411,9 @@ async def publish_post(
 
     first_type, first_file = media[0]
 
-    # -----------------------------------------
-    # ГОЛОВНИЙ ПОСТ
-    # -----------------------------------------
+    # =====================================================
+    # ПЕРШЕ ФОТО
+    # =====================================================
 
     if first_type == "photo":
 
@@ -407,6 +425,10 @@ async def publish_post(
             reply_markup=keyboard,
         )
 
+    # =====================================================
+    # ПЕРШЕ ВІДЕО
+    # =====================================================
+
     else:
 
         await context.bot.send_video(
@@ -417,9 +439,9 @@ async def publish_post(
             reply_markup=keyboard,
         )
 
-    # -----------------------------------------
+    # =====================================================
     # РЕШТА ФОТО / ВІДЕО
-    # -----------------------------------------
+    # =====================================================
 
     remaining = media[1:]
 
@@ -429,7 +451,9 @@ async def publish_post(
         10
     ):
 
-        batch = remaining[i:i + 10]
+        batch = remaining[
+            i:i + 10
+        ]
 
         group = []
 
