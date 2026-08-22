@@ -62,6 +62,8 @@ HISTORY_USERNAME = os.getenv(
 # =========================================================
 
 PHONE = "0676755121"
+PHONE_LINK = "+380676755121"
+
 SELLER_NAME = "Тарас"
 
 CREDIT_URL = "https://ref.best/Your_best_autoLV"
@@ -86,6 +88,7 @@ HISTORY_NUMERIC_ID = None
 
 
 def new_session(user_id):
+
     sessions[user_id] = {
         "media": [],
         "caption": "",
@@ -93,6 +96,7 @@ def new_session(user_id):
 
 
 def cancel_session(user_id):
+
     sessions.pop(
         user_id,
         None
@@ -196,10 +200,11 @@ def format_user_caption(user_caption):
         )
 
         # Перший непорожній рядок:
-        # назва автомобіля = ЖИРНИЙ
+        # назва автомобіля = жирний
         #
-        # Будь-який рядок з $:
-        # ціна = ЖИРНА
+        # Будь-який рядок із $:
+        # ціна = жирна
+
         if first_text_line or "$" in clean_line:
 
             result_lines.append(
@@ -237,9 +242,11 @@ def build_caption(user_caption):
         SELLER_NAME
     )
 
+    # Телефон активний через tel:
     fixed_bottom = (
         f'📞 Тел. (Viber): '
-        f'<b>{phone} - {seller}</b>\n'
+        f'<a href="tel:{PHONE_LINK}"><b>{phone}</b></a>'
+        f' - <b>{seller}</b>\n'
         f'\n'
         f'🏦 <a href="{CREDIT_URL}">КРЕДИТ</a>\n'
         f'📍 <a href="{LOCATION_URL}">РОЗТАШУВАННЯ</a>\n'
@@ -321,7 +328,10 @@ async def post_init(
     global CHANNEL_NUMERIC_ID
     global HISTORY_NUMERIC_ID
 
-    # Основний канал
+    # -----------------------------------------------------
+    # ОСНОВНИЙ КАНАЛ
+    # -----------------------------------------------------
+
     try:
 
         channel = await application.bot.get_chat(
@@ -346,7 +356,10 @@ async def post_init(
             e
         )
 
-    # Група історії
+    # -----------------------------------------------------
+    # ГРУПА ІСТОРІЇ
+    # -----------------------------------------------------
+
     try:
 
         history_chat = (
@@ -836,7 +849,7 @@ async def upload_media_to_topic(
 
             continue
 
-        # До 10 файлів в одному альбомі
+        # Telegram дозволяє до 10 файлів в альбомі
         batch_size = min(
             10,
             remaining_count
